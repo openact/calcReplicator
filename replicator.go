@@ -33,8 +33,8 @@ func (c *Ctx) NumMonths(t int) int {
 	return 12
 }
 
-// Manifest 是公式清单：变量名 -> 在时点 t 构建 IR 树（带上下文）。
-type Manifest map[string]func(t int, c *Ctx) *Node
+// Manifest 是公式清单：变量名 -> DSL 公式字符串（见 dsl.go）。
+type Manifest map[string]string
 
 // MPF 是模型点的一行（从 mpf CSV 读取）。
 type MPF struct {
@@ -264,16 +264,20 @@ func build(opts Options, ctx *Ctx, mp MPF, modelOut map[string][]string, outPath
 		paramR[name] = r
 	}
 
-	rc := &renderCtx{row: row, col: colName, paramR: paramR, cfgR: cfgR, hdrRow: hdrRow, colBase: colBase}
+	rc := &renderCtx{row: row, col: colName, paramR: paramR, cfgR: cfgR, hdrRow: hdrRow, colBase: colBase, ctx: ctx}
 	for name, r := range row {
-		builder, ok := opts.Manifest[name]
+		dsl, ok := opts.Manifest[name]
 		if !ok {
 			return fmt.Errorf("清单缺少变量 %s", name)
+		}
+		node, err := ParseDSL(dsl, ctx)
+		if err != nil {
+			return fmt.Errorf("变量 %s 的公式解析失败: %w", name, err)
 		}
 		for t := 0; t < nCols; t++ {
 			cn := colName(colBase + t)
 			cell := fmt.Sprintf("%s%d", cn, r)
-			fx(calc, cell, "="+builder(t, ctx).render(rc, t))
+			fx(calc, cell, "="+node.render(rc, t))
 		}
 	}
 

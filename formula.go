@@ -72,6 +72,32 @@ type renderCtx struct {
 	cfgR    map[string]int // slot -> 配置单元格行
 	hdrRow  int
 	colBase int
+	ctx     *Ctx // 求值 At 时点（yearend 用）
+}
+
+// evalInt 求值时点索引表达式（用于 At 节点的时间点）。
+func (n *Node) evalInt(t int, c *Ctx) int {
+	switch n.kind {
+	case "num":
+		return int(n.num)
+	case "t":
+		return t
+	case "yearend":
+		return c.YearEndIdx(t)
+	case "binop":
+		l, r := n.l.evalInt(t, c), n.r.evalInt(t, c)
+		switch n.op {
+		case "+":
+			return l + r
+		case "-":
+			return l - r
+		case "*":
+			return l * r
+		case "/":
+			return l / r
+		}
+	}
+	return 0
 }
 
 // render 把 IR 树渲染成 Excel 表达式（不含前导 =）。
@@ -85,12 +111,14 @@ func (n *Node) render(c *renderCtx, t int) string {
 		return strconv.Itoa(t)
 	case "hdr":
 		return c.col(c.colBase+t) + "$" + strconv.Itoa(c.hdrRow)
+	case "nummonths":
+		return strconv.Itoa(c.ctx.NumMonths(t))
 	case "cur":
 		return c.col(c.colBase+t) + strconv.Itoa(c.row[n.name])
 	case "prev":
 		return c.col(c.colBase+t-1) + strconv.Itoa(c.row[n.name])
 	case "at":
-		idx := int(n.at.num)
+		idx := n.at.evalInt(t, c.ctx)
 		return c.col(c.colBase+idx) + strconv.Itoa(c.row[n.name])
 	case "param":
 		return "$B$" + strconv.Itoa(c.paramR[n.name])
